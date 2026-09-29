@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Usage: [UPTIME_KEEP=$'url\tslow-ms\n...'] check.sh URL...
+# Usage: [UPTIME_KEEP=$'url\tslow-ms\theader,names\n...'] check.sh URL...
 # Prints one tab-separated line per URL: url, status, http code, response ms, cert days left, detail.
-# status: ok | down | ssl. curl verifies the chain and hostname; openssl only reads the expiry date.
+# status: ok | down | ssl | skipped. curl verifies the chain and hostname; openssl only reads the expiry date.
+# Custom header values come from the keyring (secrets.sh) and reach curl through a file descriptor,
+# never argv. With custom headers, redirects are not followed so the headers can't leak to another
+# host. If a value can't be read (keyring locked), the check is skipped and not recorded.
 # Each result is appended to the URL's history file (see history.sh). Afterwards one line per URL in
 # UPTIME_KEEP (or the arguments) gives uptime and when the current outage / slow streak began:
 #   stats, url, 24h %, 7d %, 30d %, down-since epoch, slow-since epoch (empty when not ongoing)
@@ -13,9 +16,35 @@
 source "$(dirname "$0")/history.sh"
 mkdir -p "$history_dir"
 
+declare -A kept slow headers
+if [[ -n ${UPTIME_KEEP:-} ]]; then
+  urls=()
+  while IFS=$'\t' read -r url ms names; do
+    (( ${#urls[@]} < max_targets && ${#url} <= max_url_length )) || continue
+    urls+=("$url"); slow[$url]=$ms; headers[$url]=$names; kept[$(history_file "$url")]=1
+  done <<< "$UPTIME_KEEP"
+else
+  urls=("${@:1:max_targets}")
+fi
+
 check() {
-  local url=$1 code secs ms rc days="" detail="" status host port end
-  read -r code secs detail < <(curl -s -L -o /dev/null -w '%{http_code} %{time_total} %{exitcode} %{errormsg}' --max-time 10 "$url")
+  local url=$1 code secs ms rc days="" detail="" status host port end name value lines="" n=0
+  local opts=(-s -o /dev/null -w '%{http_code} %{time_total} %{exitcode} %{errormsg}' --max-time 10)
+
+  for name in ${headers[$url]//,/ }; do
+    (( n++ < max_headers )) || break
+    if ! value=$(secret-tool lookup service exeque.omarchy-http-uptime url "$url" header "$name" 2>/dev/null); then
+      printf '%s\t%s\t\t\t\t%s\n' "$url" skipped "Header $name unavailable (keyring locked?)"
+      return
+    fi
+    lines+="$name: $value"$'\n'
+  done
+
+  if [[ -n $lines ]]; then
+    read -r code secs detail < <(curl "${opts[@]}" -H @<(printf '%s' "$lines") "$url")
+  else
+    read -r code secs detail < <(curl "${opts[@]}" -L "$url")
+  fi
   ms=$(awk -v s="$secs" 'BEGIN { printf "%d", s * 1000 }')
   rc=${detail%% *}; detail=${detail#"$rc"}; detail=${detail# }
 
@@ -28,7 +57,11 @@ check() {
   fi
 
   case $rc in
-    0) [[ $code == 2* ]] && status=ok || { status=down; detail="HTTP $code"; } ;;
+    0)
+      if [[ $code == 2* ]]; then status=ok
+      elif [[ $code == 3* && -n $lines ]]; then status=down; detail="HTTP $code (redirects are not followed with custom headers)"
+      else status=down; detail="HTTP $code"
+      fi ;;
     35|51|53|54|58|59|60|64|66|77|80|82|83|90|91)
       status=ssl
       # Short labels for the common certificate failures; anything else keeps curl's message.
@@ -57,18 +90,10 @@ for url in "$@"; do
 done
 wait
 
-declare -A kept slow
 if [[ -n ${UPTIME_KEEP:-} ]]; then
-  urls=()
-  while IFS=$'\t' read -r url ms; do
-    (( ${#urls[@]} < max_targets && ${#url} <= max_url_length )) || continue
-    urls+=("$url"); slow[$url]=$ms; kept[$(history_file "$url")]=1
-  done <<< "$UPTIME_KEEP"
   for file in "$history_dir"/*.tsv; do
     [[ -e $file && -z ${kept[$file]:-} && -n $(find "$file" -mmin +10) ]] && rm -f "$file"
   done
-else
-  urls=("${@:1:max_targets}")
 fi
 
 # ponytail: stats rescan each URL's 30-day history every run; fine for a handful of URLs,
