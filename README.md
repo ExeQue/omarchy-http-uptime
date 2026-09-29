@@ -118,6 +118,8 @@ To keep the long-running shell bounded, the plugin enforces:
 
 - at most 50 URLs, each at most 2048 characters (extra or invalid entries in a hand-edited config are ignored);
 - at most 6 checks at a time, each with a 10 second request timeout and a 10 second certificate timeout;
+- keyring lookups time out after 3 seconds (the check is then skipped) and keyring writes after 30 seconds, so a locked keyring waiting for an unlock prompt can't stall monitoring;
+- a check run is stopped after 10 minutes at most, and stuck processes are restarted by a watchdog;
 - a check interval of at least 30 seconds;
 - at most 256 KB of script output read per run;
 - at most 100,000 history records per URL, which covers 30 days at the 30 second minimum interval.
