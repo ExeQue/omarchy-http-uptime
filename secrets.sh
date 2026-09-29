@@ -11,8 +11,12 @@ service=exeque.omarchy-http-uptime
 
 valid_name() { [[ $1 =~ ^[!#\$%\&\'*+.^_\`\|~0-9A-Za-z-]{1,64}$ ]]; }
 
+# Bounded: a locked keyring may prompt for unlock; give up rather than block the queue.
+keyring_lookup() { timeout "$keyring_lookup_timeout" secret-tool lookup "$@"; }
+keyring_clear() { timeout "$keyring_write_timeout" secret-tool clear "$@"; }
+
 store() { # url name, value on stdin
-  secret-tool store --label="HTTP Uptime: $2 for $1" service "$service" url "$1" header "$2"
+  timeout "$keyring_write_timeout" secret-tool store --label="HTTP Uptime: $2 for $1" service "$service" url "$1" header "$2"
 }
 
 case $1 in
@@ -23,14 +27,14 @@ case $1 in
     [[ $value != *$'\r'* && ${#value} -le $max_header_value ]] || { echo "invalid header value" >&2; exit 1; }
     printf '%s' "$value" | store "$2" "$3"
     ;;
-  unset) secret-tool clear service "$service" url "$2" header "$3" ;;
-  clear) secret-tool clear service "$service" url "$2" ;;
+  unset) keyring_clear service "$service" url "$2" header "$3" ;;
+  clear) keyring_clear service "$service" url "$2" ;;
   rename)
     old=$2 new=$3; shift 3
     for name in "$@"; do
       valid_name "$name" || continue
-      value=$(secret-tool lookup service "$service" url "$old" header "$name") || continue
-      printf '%s' "$value" | store "$new" "$name" && secret-tool clear service "$service" url "$old" header "$name"
+      value=$(keyring_lookup service "$service" url "$old" header "$name") || continue
+      printf '%s' "$value" | store "$new" "$name" && keyring_clear service "$service" url "$old" header "$name"
     done
     ;;
   *) echo "usage: secrets.sh set|unset|clear|rename ..." >&2; exit 2 ;;

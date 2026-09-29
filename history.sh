@@ -10,6 +10,9 @@ max_targets=50
 max_url_length=2048
 max_headers=10
 max_header_value=4096
+# A locked keyring can wait for an unlock prompt, so every keyring call is bounded.
+keyring_lookup_timeout=3
+keyring_write_timeout=30
 
 # Readable name plus a short hash, so URLs that sanitize to the same name never share a file.
 history_file() {

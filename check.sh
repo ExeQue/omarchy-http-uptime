@@ -33,7 +33,7 @@ check() {
 
   for name in ${headers[$url]//,/ }; do
     (( n++ < max_headers )) || break
-    if ! value=$(secret-tool lookup service exeque.omarchy-http-uptime url "$url" header "$name" 2>/dev/null); then
+    if ! value=$(timeout "$keyring_lookup_timeout" secret-tool lookup service exeque.omarchy-http-uptime url "$url" header "$name" 2>/dev/null); then
       printf '%s\t%s\t\t\t\t%s\n' "$url" skipped "Header $name unavailable (keyring locked?)"
       return
     fi
