@@ -22,6 +22,9 @@ BarWidget {
   readonly property int maxUrlLength: 2048
   readonly property int minInterval: 30
   readonly property int maxOutput: 262144
+  // Custom headers: names live in the config, values in the keyring (secrets.sh). Mirrors history.sh.
+  readonly property int maxHeaders: 10
+  readonly property int maxHeaderValue: 4096
 
   readonly property var targets: config.targets || []
   property var results: ({})
@@ -45,6 +48,7 @@ BarWidget {
   readonly property real colGrip: Style.space(22)
   readonly property real colNumber: Style.spacing.numberFieldWidth
   readonly property real colAction: Style.space(56)
+  readonly property real colHeaders: Style.space(30)
   readonly property real colGap: Style.space(8)
 
   readonly property var resultList: targets.map(t => results[t.url]).filter(r => r)
@@ -117,6 +121,7 @@ BarWidget {
     if (slowMs !== slowFor(url)) patch.slowMs = slowMs
     if (patch.url) {
       Quickshell.execDetached(["bash", Qt.resolvedUrl("rename.sh").toString().replace(/^file:\/\//, ""), url, draftUrl])
+      if (headersFor(url).length) runSecrets(["rename", url, draftUrl].concat(headersFor(url)), "", null)
       var moved = Object.assign({}, uptime)
       moved[draftUrl] = moved[url]
       uptime = moved
@@ -152,6 +157,57 @@ BarWidget {
 
   function removeTarget(url) {
     save({ targets: targets.filter(t => t.url !== url) })
+    runSecrets(["clear", url], "", null)
+  }
+
+  function headersFor(url) {
+    var t = targets.find(t => t.url === url)
+    return t && t.headers ? t.headers : []
+  }
+
+  function validHeaderName(name) {
+    return /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/.test(name)
+  }
+
+  // Stores the value in the keyring first; the name is added to the config only once that succeeds.
+  // An existing name gets its value replaced.
+  function setHeader(url, name, value) {
+    name = name.trim()
+    var names = headersFor(url)
+    if (!validHeaderName(name) || /[\r\n]/.test(value) || value.length > maxHeaderValue) return false
+    if (names.indexOf(name) < 0 && names.length >= maxHeaders) return false
+    runSecrets(["set", url, name], value, function() {
+      var current = headersFor(url)
+      if (current.indexOf(name) < 0) patchTarget(url, { headers: current.concat([name]) })
+      recheck([url])
+    })
+    return true
+  }
+
+  function removeHeader(url, name) {
+    patchTarget(url, { headers: headersFor(url).filter(n => n !== name) })
+    runSecrets(["unset", url, name], "", () => recheck([url]))
+  }
+
+  function patchTarget(url, patch) {
+    save({ targets: targets.map(t => t.url === url ? Object.assign({}, t, patch) : t) })
+  }
+
+  // Keyring operations run one at a time through secrets.sh. Values go over stdin, never argv.
+  property var secretQueue: []
+
+  function runSecrets(args, input, done) {
+    secretQueue = secretQueue.concat([{ args: args, input: input, done: done }])
+    if (!secretProc.running) nextSecret()
+  }
+
+  function nextSecret() {
+    if (!secretQueue.length) return
+    var op = secretQueue[0]
+    secretQueue = secretQueue.slice(1)
+    secretProc.op = op
+    secretProc.command = ["bash", Qt.resolvedUrl("secrets.sh").toString().replace(/^file:\/\//, "")].concat(op.args)
+    secretProc.running = true
   }
 
   // There is one widget per monitor. The first instance leads: it runs the checks, writes the
@@ -181,7 +237,7 @@ BarWidget {
 
   // 0 = healthy, 1 = degraded (slow, certificate expiring), 2 = failing (non-2xx, unreachable, invalid SSL)
   function severity(status) {
-    return status === "ok" ? 0 : status === "slow" || status === "expiring" ? 1 : 2
+    return status === "ok" ? 0 : status === "slow" || status === "expiring" || status === "skipped" ? 1 : 2
   }
 
   // Title says what happened; the body starts with a dot in the state's colour (red down, yellow
@@ -190,7 +246,7 @@ BarWidget {
   function notify(r, recovered) {
     var level = severity(r.status)
     var host = r.url.replace(/^https?:\/\//, "").replace(/\/$/, "")
-    var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error" }[r.status] || "Down"
+    var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error", skipped: "Check skipped" }[r.status] || "Down"
     var text = recovered ? "Responding normally (" + r.ms + " ms)" : r.detail
     var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     Quickshell.execDetached(["omarchy-notification-send", "--app-name", "HTTP Uptime",
@@ -252,6 +308,7 @@ BarWidget {
 
   function summary(r) {
     if (!r) return "checking…"
+    if (r.status === "skipped") return r.detail
     var since = sinceText(r)
     if (since) return r.detail + " · " + since
     var cert = r.days !== null ? " · cert " + r.days + "d" : ""
@@ -331,7 +388,7 @@ BarWidget {
   }
 
   function statusLabel(status) {
-    return { ok: "Up", slow: "Slow", down: "Down", ssl: "SSL error" }[status] || status
+    return { ok: "Up", slow: "Slow", down: "Down", ssl: "SSL error", skipped: "Skipped" }[status] || status
   }
 
   function timeText(ms) {
@@ -393,6 +450,9 @@ BarWidget {
         c.targets = (Array.isArray(c.targets) ? c.targets : [])
           .filter(t => t && root.wellFormed(t.url) && !seen[t.url] && (seen[t.url] = true))
           .slice(0, root.maxTargets)
+          .map(t => Array.isArray(t.headers)
+            ? Object.assign({}, t, { headers: t.headers.filter((n, i, a) => root.validHeaderName(n) && a.indexOf(n) === i).slice(0, root.maxHeaders) })
+            : t)
         root.config = c
       }
       catch (e) { console.warn("exeque.omarchy-http-uptime: invalid " + root.configPath + ": " + e) }
@@ -414,6 +474,22 @@ BarWidget {
   }
 
   Process {
+    id: secretProc
+    property var op: null
+    stdinEnabled: true
+    onStarted: {
+      if (op && op.input !== "") write(op.input + "\n")
+      if (op) op.input = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0 && op && op.done) op.done()
+      else if (exitCode !== 0) console.warn("exeque.omarchy-http-uptime: keyring operation failed: " + (op ? op.args[0] : ""))
+      op = null
+      root.nextSecret()
+    }
+  }
+
+  Process {
     id: detailProc
     stdout: StdioCollector {
       waitForEnd: true
@@ -423,7 +499,7 @@ BarWidget {
 
   Process {
     id: checkProc
-    environment: ({ UPTIME_KEEP: root.targets.map(t => t.url + "\t" + root.slowFor(t.url)).join("\n") })
+    environment: ({ UPTIME_KEEP: root.targets.map(t => t.url + "\t" + root.slowFor(t.url) + "\t" + (t.headers || []).join(",")).join("\n") })
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.parse(text)
@@ -608,13 +684,13 @@ BarWidget {
               spacing: root.colGap
 
               Repeater {
-                model: ["Every (s)", "Slow (ms)", ""]
+                model: [["Every (s)", root.colNumber], ["Slow (ms)", root.colNumber], ["", root.colHeaders], ["", root.colAction]]
 
                 Text {
-                  required property string modelData
-                  width: modelData ? root.colNumber : root.colAction
+                  required property var modelData
+                  width: modelData[1]
                   textFormat: Text.PlainText
-                  text: modelData
+                  text: modelData[0]
                   color: Qt.darker(Color.foreground, 1.4)
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
@@ -637,6 +713,8 @@ BarWidget {
               property int draftSlow: root.slowFor(modelData.url)
               property bool invalid: false
               property bool confirmingDelete: false
+              property bool headersOpen: false
+              readonly property var headerNames: root.headersFor(modelData.url)
               readonly property bool dirty: draftUrl.trim() !== modelData.url
                 || draftInterval !== root.intervalFor(modelData) || draftSlow !== root.slowFor(modelData.url)
 
@@ -650,6 +728,7 @@ BarWidget {
                 draftSlow = root.slowFor(modelData.url)
                 invalid = false
                 confirmingDelete = false
+                headersOpen = false
                 urlInput.text = draftUrl
                 // Typed text is only committed to `value` on Enter or blur, and SpinBox's displayText follows
                 // the typed text, so format the value explicitly; otherwise the field keeps the typed text
@@ -852,6 +931,22 @@ BarWidget {
                     onModified: function(v) { row.draftSlow = v }
                   }
 
+                  Item {
+                    visible: !row.confirmingDelete
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: root.colHeaders
+                    height: headersButton.height
+
+                    PanelActionButton {
+                      id: headersButton
+                      anchors.centerIn: parent
+                      iconText: "\uf084"
+                      foreground: row.headerNames.length || row.headersOpen ? Color.foreground : Color.muted
+                      tooltipText: row.headerNames.length ? "Custom headers (" + row.headerNames.length + ")" : "Custom headers"
+                      onClicked: row.headersOpen = !row.headersOpen
+                    }
+                  }
+
                   // Trash when the row is clean; save and revert while it has unsaved edits.
                   Item {
                     anchors.verticalCenter: parent.verticalCenter
@@ -909,6 +1004,102 @@ BarWidget {
                       }
                     }
                   }
+                }
+              }
+
+              // Custom headers: names are shown, values never leave the keyring.
+              Column {
+                visible: root.editing && row.headersOpen
+                x: root.colGrip
+                width: parent.width - x
+                spacing: Style.space(6)
+
+                Repeater {
+                  model: row.headerNames
+
+                  Item {
+                    required property string modelData
+                    width: parent.width
+                    height: Style.space(22)
+
+                    Text {
+                      anchors.left: parent.left
+                      anchors.right: removeHeaderButton.left
+                      anchors.verticalCenter: parent.verticalCenter
+                      elide: Text.ElideRight
+                      textFormat: Text.PlainText
+                      text: modelData + ": ••••••••"
+                      color: Color.foreground
+                      font.family: Style.font.family
+                      font.pixelSize: Style.font.caption
+                    }
+
+                    PanelActionButton {
+                      id: removeHeaderButton
+                      anchors.right: parent.right
+                      anchors.rightMargin: (root.colAction - width) / 2
+                      anchors.verticalCenter: parent.verticalCenter
+                      iconText: "\uf1f8"
+                      tooltipText: "Remove header"
+                      onClicked: root.removeHeader(row.modelData.url, modelData)
+                    }
+                  }
+                }
+
+                Item {
+                  visible: row.headerNames.length < root.maxHeaders
+                  width: parent.width
+                  height: headerValue.height
+
+                  TextField {
+                    id: headerName
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.space(150)
+                    height: headerValue.height
+                    maximumLength: 64
+                    placeholderText: "Header name"
+                    onAccepted: headerValue.forceActiveFocus()
+                  }
+
+                  TextField {
+                    id: headerValue
+                    anchors.left: headerName.right
+                    anchors.leftMargin: root.colGap
+                    anchors.right: addHeaderButton.left
+                    anchors.rightMargin: root.colGap
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: intervalInput.field.height
+                    password: true
+                    maximumLength: root.maxHeaderValue
+                    placeholderText: "Value (stored in the keyring)"
+                    onAccepted: addHeaderButton.clicked()
+                  }
+
+                  Button {
+                    id: addHeaderButton
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: root.colAction
+                    text: "Set"
+                    bordered: true
+                    tooltipText: "Add header, or replace the value of an existing one"
+                    onClicked: {
+                      if (root.setHeader(row.modelData.url, headerName.text, headerValue.text)) {
+                        headerName.text = ""
+                        headerValue.text = ""
+                      }
+                    }
+                  }
+                }
+
+                Text {
+                  visible: row.headerNames.length >= root.maxHeaders
+                  textFormat: Text.PlainText
+                  text: "Limit of " + root.maxHeaders + " headers reached"
+                  color: Color.muted
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
                 }
               }
 
@@ -1154,6 +1345,8 @@ BarWidget {
                 stepSize: 100
                 value: root.config.slowMs
               }
+
+              Item { width: root.colHeaders; height: 1 }
 
               Button {
                 id: addButton
