@@ -61,10 +61,21 @@ Settings are stored in `~/.config/omarchy/http-uptime.json`, which the panel rea
 | `slowMs` | Default response time, in milliseconds, above which a URL counts as slow |
 | `targets[].interval`, `targets[].slowMs` | Per-URL overrides |
 
-## Data and privacy
+## Where data is stored
+
+Everything stays on your machine.
+
+| What | Location |
+|---|---|
+| Settings and monitored URLs | `~/.config/omarchy/http-uptime.json` |
+| Check history | `~/.local/state/omarchy/http-uptime/<url>-<hash>.tsv` (under `$XDG_STATE_HOME` when that is set) |
+| Plugin code | `~/.config/omarchy/plugins/exeque.omarchy-http-uptime/` |
+
+Each history file holds one URL, with one line per check: epoch, up (0/1), status, HTTP code and response time in milliseconds. The file name is a readable form of the URL plus a short hash. Lines older than 30 days are pruned, and a URL's file is deleted when you remove or rename that URL. Delete the directory to reset all history.
+
+## Privacy
 
 - The plugin sends requests only to the URLs you add. It makes an HTTPS request with `curl`, and an `openssl` connection to read certificate expiry.
-- History is stored locally in `~/.local/state/omarchy/http-uptime/`, one TSV file per URL with one line per check: epoch, up (0/1), status, HTTP code and milliseconds. Lines older than 30 days are pruned. A URL's file is deleted when you remove or rename that URL.
 - There are no services, no background daemons outside the shell, and no privilege escalation.
 
 ## Dependencies
