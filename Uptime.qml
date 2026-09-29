@@ -22,6 +22,11 @@ BarWidget {
   readonly property int maxUrlLength: 2048
   readonly property int minInterval: 30
   readonly property int maxOutput: 262144
+  // Upper bounds on script runtime (seconds). check.sh's own timeouts normally end it long before;
+  // these make sure a stuck process can't stop monitoring. See also the watchdog timers below.
+  readonly property int checkTimeout: 600
+  readonly property int detailTimeout: 30
+  readonly property int secretTimeout: 90
   // Custom headers: names live in the config, values in the keyring (secrets.sh). Mirrors history.sh.
   readonly property int maxHeaders: 10
   readonly property int maxHeaderValue: 4096
@@ -64,9 +69,9 @@ BarWidget {
     .map(x => x.t)
 
   // Runs a plugin script with its stdout capped at maxOutput bytes, since StdioCollector keeps it all.
-  function scriptCommand(name, args) {
+  function scriptCommand(name, seconds, args) {
     var path = Qt.resolvedUrl(name).toString().replace(/^file:\/\//, "")
-    return ["bash", "-c", "bash \"$0\" \"$@\" | head -c " + maxOutput, path].concat(args)
+    return ["bash", "-c", "timeout -k 5 " + seconds + " bash \"$0\" \"$@\" | head -c " + maxOutput, path].concat(args)
   }
 
   function severityOf(url) {
@@ -206,7 +211,7 @@ BarWidget {
     var op = secretQueue[0]
     secretQueue = secretQueue.slice(1)
     secretProc.op = op
-    secretProc.command = ["bash", Qt.resolvedUrl("secrets.sh").toString().replace(/^file:\/\//, "")].concat(op.args)
+    secretProc.command = ["timeout", "-k", "5", String(secretTimeout), "bash", Qt.resolvedUrl("secrets.sh").toString().replace(/^file:\/\//, "")].concat(op.args)
     secretProc.running = true
   }
 
@@ -231,7 +236,7 @@ BarWidget {
     var next = Object.assign({}, nextDue)
     due.forEach(t => next[t.url] = now + intervalFor(t) * 1000)
     nextDue = next
-    checkProc.command = scriptCommand("check.sh", due.map(t => t.url))
+    checkProc.command = scriptCommand("check.sh", checkTimeout, due.map(t => t.url))
     checkProc.running = true
   }
 
@@ -364,7 +369,7 @@ BarWidget {
   }
 
   function loadDetail() {
-    detailProc.command = scriptCommand("detail.sh", [detailUrl, String(slowFor(detailUrl))])
+    detailProc.command = scriptCommand("detail.sh", detailTimeout, [detailUrl, String(slowFor(detailUrl))])
     detailProc.running = true
   }
 
@@ -504,6 +509,26 @@ BarWidget {
       waitForEnd: true
       onStreamFinished: root.parse(text)
     }
+  }
+
+  // Watchdogs: stop a process that outlives its timeout (plus a grace period) so the next batch or
+  // keyring operation can run. Stopping it fires onExited, which moves the secret queue along.
+  Timer {
+    interval: (root.checkTimeout + 30) * 1000
+    running: checkProc.running
+    onTriggered: checkProc.running = false
+  }
+
+  Timer {
+    interval: (root.detailTimeout + 10) * 1000
+    running: detailProc.running
+    onTriggered: detailProc.running = false
+  }
+
+  Timer {
+    interval: (root.secretTimeout + 10) * 1000
+    running: secretProc.running
+    onTriggered: secretProc.running = false
   }
 
   Timer {
