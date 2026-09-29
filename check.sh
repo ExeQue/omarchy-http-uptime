@@ -15,11 +15,14 @@
 
 source "$(dirname "$0")/history.sh"
 enter_history_dir || exit 1
+# Remove temporary files left by a run that was killed outright (SIGKILL skips the EXIT trap).
+find . -maxdepth 1 -type f -name '.tmp.*' -mmin +10 -delete
 
 declare -A kept slow headers
 if [[ -n ${UPTIME_KEEP:-} ]]; then
   urls=()
   while IFS=$'\t' read -r url ms names; do
+    [[ -n $url ]] || continue
     (( ${#urls[@]} < max_targets && ${#url} <= max_url_length )) || continue
     urls+=("$url"); slow[$url]=$ms; headers[$url]=$names; kept[$(history_file "$url")]=1
   done <<< "$UPTIME_KEEP"
@@ -104,11 +107,11 @@ for url in "${urls[@]}"; do
   [[ -f $file ]] || continue
   # Cap records per file before scanning it.
   if (( $(read_nofollow "$file" 2>/dev/null | wc -l) > max_records )); then
-    cap=$(make_temp) && read_nofollow "$file" | tail -n "$max_records" > "$cap" && mv -T -- "$cap" "$file"
+    make_temp cap && read_nofollow "$file" | tail -n "$max_records" > "$cap" && mv -T -- "$cap" "$file"
   fi
   # awk copies the records it keeps to $out and exits 10 when it pruned any, so the file is only
   # replaced when something changed.
-  out=$(make_temp) || continue
+  make_temp out || continue
   read_nofollow "$file" 2>/dev/null | awk -F'\t' -v url="$url" -v slow="${slow[$url]:-}" -v now="$(date +%s)" -v out="$out" '
     BEGIN { span[1] = 86400; span[2] = 7 * 86400; span[3] = 30 * 86400 }
     now - $1 > 30 * 86400 { pruned = 1; next }

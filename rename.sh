@@ -8,7 +8,7 @@ enter_history_dir || exit 1
 old=$(history_file "$1") new=$(history_file "$2")
 [[ -f $old && ! -L $old ]] || exit 0
 # Reads use O_NOFOLLOW; mv -T renames over whatever is at $new (a symlink is replaced, not followed).
-merged=$(make_temp) || exit 1
+make_temp merged || exit 1
 { read_nofollow "$old"; read_nofollow "$new" 2>/dev/null; } | sort -n > "$merged" || exit 1
 mv -T -- "$merged" "$new" && rm -f -- "$old"
 touch -h -- "$new"

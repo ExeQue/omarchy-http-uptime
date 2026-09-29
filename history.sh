@@ -19,7 +19,8 @@ keyring_write_timeout=30
 # verified directory (in effect a held directory handle) and a swapped pathname can't redirect it.
 # Inside it, history files are opened with O_NOFOLLOW (dd iflag/oflag=nofollow), replaced by
 # rename (mv -T, which replaces a symlink rather than following it) and touched with touch -h.
-# Temporary files come from mktemp (O_EXCL, unpredictable names) and are removed on exit.
+# Temporary files come from mktemp (O_EXCL, unpredictable names) and are removed on exit, including
+# exit by TERM/INT/HUP (the watchdog). SIGKILL can't be trapped, so check.sh also sweeps leftovers.
 enter_history_dir() {
   mkdir -p -- "$history_dir" || return 1
   [[ ! -L $history_dir ]] || { echo "refusing symlinked history directory: $history_dir" >&2; return 1; }
@@ -31,8 +32,13 @@ enter_history_dir() {
 }
 
 temps=()
-make_temp() { local t; t=$(mktemp ./.tmp.XXXXXXXX) || return 1; temps+=("$t"); printf '%s' "$t"; }
+# make_temp VAR: creates a temporary file and stores its path in VAR. It runs in the current shell
+# (not a $(...) subshell), so the path is registered for cleanup.
+make_temp() { local -n _path=$1; _path=$(mktemp ./.tmp.XXXXXXXX) || return 1; temps+=("$_path"); }
 trap 'rm -f -- "${temps[@]}"' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
 read_nofollow() { dd if="$1" iflag=nofollow status=none; }
 append_nofollow() { dd of="$1" oflag=append,nofollow conv=notrunc status=none; }
