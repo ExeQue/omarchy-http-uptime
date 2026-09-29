@@ -611,6 +611,7 @@ BarWidget {
               property int draftInterval: root.intervalFor(modelData)
               property int draftSlow: root.slowFor(modelData.url)
               property bool invalid: false
+              property bool confirmingDelete: false
               readonly property bool dirty: draftUrl.trim() !== modelData.url
                 || draftInterval !== root.intervalFor(modelData) || draftSlow !== root.slowFor(modelData.url)
 
@@ -623,6 +624,7 @@ BarWidget {
                 draftInterval = root.intervalFor(modelData)
                 draftSlow = root.slowFor(modelData.url)
                 invalid = false
+                confirmingDelete = false
                 urlInput.text = draftUrl
                 // Typed text is only committed to `value` on Enter or blur, and SpinBox's displayText follows
                 // the typed text, so format the value explicitly; otherwise the field keeps the typed text
@@ -736,9 +738,22 @@ BarWidget {
                   anchors.rightMargin: root.editing ? root.colGap : Style.space(10)
                   anchors.verticalCenter: parent.verticalCenter
 
+                  Text {
+                    visible: root.editing && row.confirmingDelete
+                    width: parent.width
+                    height: urlInput.implicitHeight
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideMiddle
+                    textFormat: Text.PlainText
+                    text: "Delete " + row.modelData.url.replace(/^https?:\/\//, "") + " and its history?"
+                    color: root.bar ? root.bar.urgent : Color.urgent
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                  }
+
                   TextField {
                     id: urlInput
-                    visible: root.editing
+                    visible: root.editing && !row.confirmingDelete
                     width: parent.width
                     text: row.modelData.url
                     foreground: row.invalid ? (root.bar ? root.bar.urgent : Color.urgent) : Color.foreground
@@ -814,13 +829,37 @@ BarWidget {
                     width: root.colAction
                     height: trashButton.height
 
+                    // Entries with history ask first; deleting removes up to 30 days of data.
                     PanelActionButton {
                       id: trashButton
-                      visible: !row.dirty
+                      visible: !row.dirty && !row.confirmingDelete
                       anchors.centerIn: parent
                       iconText: "\uf1f8"
                       tooltipText: "Stop monitoring"
-                      onClicked: root.removeTarget(row.modelData.url)
+                      onClicked: {
+                        if (root.uptime[row.modelData.url]) row.confirmingDelete = true
+                        else root.removeTarget(row.modelData.url)
+                      }
+                    }
+
+                    Row {
+                      visible: row.confirmingDelete
+                      anchors.centerIn: parent
+                      spacing: Style.space(2)
+
+                      PanelActionButton {
+                        iconText: "\uf1f8"
+                        foreground: root.bar ? root.bar.urgent : Color.urgent
+                        hoverColor: foreground
+                        tooltipText: "Delete entry and history"
+                        onClicked: root.removeTarget(row.modelData.url)
+                      }
+
+                      PanelActionButton {
+                        iconText: "\uf00d"
+                        tooltipText: "Cancel"
+                        onClicked: row.confirmingDelete = false
+                      }
                     }
 
                     Row {
