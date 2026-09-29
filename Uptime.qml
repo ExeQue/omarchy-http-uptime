@@ -803,6 +803,7 @@ BarWidget {
 
                   NumberField {
                     id: intervalInput
+                    visible: !row.confirmingDelete
                     anchors.verticalCenter: parent.verticalCenter
                     fieldWidth: root.colNumber
                     from: 10
@@ -814,6 +815,7 @@ BarWidget {
 
                   NumberField {
                     id: slowInput
+                    visible: !row.confirmingDelete
                     anchors.verticalCenter: parent.verticalCenter
                     fieldWidth: root.colNumber
                     from: 1
