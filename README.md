@@ -69,7 +69,7 @@ Settings are stored in `~/.config/omarchy/http-uptime.json`, which the panel rea
 
 | Key | Meaning |
 |---|---|
-| `interval` | Default seconds between checks (minimum 10) |
+| `interval` | Default seconds between checks (minimum 30) |
 | `warnDays` | Warn when a certificate expires within this many days |
 | `slowMs` | Default response time, in milliseconds, above which a URL counts as slow |
 | `targets[].interval`, `targets[].slowMs` | Per-URL overrides |
@@ -94,6 +94,16 @@ Each history file holds one URL, with one line per check: epoch, up (0/1), statu
 ## Dependencies
 
 `bash`, `curl`, `openssl`, `awk`, `md5sum` and `omarchy-notification-send`, all present on a standard Omarchy install.
+
+## Limits
+
+To keep the long-running shell bounded, the plugin enforces:
+
+- at most 50 URLs, each at most 2048 characters (extra or invalid entries in a hand-edited config are ignored);
+- at most 6 checks at a time, each with a 10 second request timeout and a 10 second certificate timeout;
+- a check interval of at least 30 seconds;
+- at most 256 KB of script output read per run;
+- at most 100,000 history records per URL, which covers 30 days at the 30 second minimum interval.
 
 ## Notes
 
