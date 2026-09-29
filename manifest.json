@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "exeque.omarchy-http-uptime",
+  "name": "HTTP Uptime",
+  "version": "1.0.0",
+  "author": "ExeQue",
+  "license": "MIT",
+  "description": "Monitors URLs for 2xx responses, valid SSL, response time and 24h/7d/30d uptime",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Uptime.qml"
+  },
+  "barWidget": {
+    "displayName": "HTTP Uptime",
+    "description": "HTTP uptime and SSL certificate monitor",
+    "category": "Development",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
