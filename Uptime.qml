@@ -16,6 +16,13 @@ BarWidget {
   readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/http-uptime.json"
   property var config: ({ interval: 300, warnDays: 14, slowMs: 2000, targets: [] })
 
+  // Resource bounds, mirrored in history.sh: target count, URL length, minimum interval, and the
+  // most script output kept in memory.
+  readonly property int maxTargets: 50
+  readonly property int maxUrlLength: 2048
+  readonly property int minInterval: 30
+  readonly property int maxOutput: 262144
+
   readonly property var targets: config.targets || []
   property var results: ({})
   property var uptime: ({})
@@ -52,6 +59,12 @@ BarWidget {
     .sort((a, b) => b.s - a.s || a.i - b.i)
     .map(x => x.t)
 
+  // Runs a plugin script with its stdout capped at maxOutput bytes, since StdioCollector keeps it all.
+  function scriptCommand(name, args) {
+    var path = Qt.resolvedUrl(name).toString().replace(/^file:\/\//, "")
+    return ["bash", "-c", "bash \"$0\" \"$@\" | head -c " + maxOutput, path].concat(args)
+  }
+
   function severityOf(url) {
     return results[url] ? severity(results[url].status) : 0
   }
@@ -61,7 +74,7 @@ BarWidget {
     return i > 0 && i < displayTargets.length && severityOf(displayTargets[i].url) !== severityOf(displayTargets[i - 1].url)
   }
 
-  function intervalFor(t) { return Math.max(10, t.interval || config.interval) }
+  function intervalFor(t) { return Math.max(minInterval, t.interval || config.interval) }
   function slowFor(url) {
     var t = targets.find(t => t.url === url)
     return t && t.slowMs || config.slowMs
@@ -72,13 +85,17 @@ BarWidget {
     configFile.setText(JSON.stringify(config, null, 2) + "\n")
   }
 
+  function wellFormed(url) {
+    return typeof url === "string" && url.length <= maxUrlLength && /^https?:\/\/\S+$/.test(url)
+  }
+
   function validUrl(url) {
-    return /^https?:\/\/\S+$/.test(url) && !targets.some(t => t.url === url)
+    return wellFormed(url) && !targets.some(t => t.url === url)
   }
 
   function addTarget(url, interval, slowMs) {
     url = url.trim()
-    if (!validUrl(url)) return false
+    if (targets.length >= maxTargets || !validUrl(url)) return false
     var t = { url: url }
     if (interval !== config.interval) t.interval = interval
     if (slowMs !== config.slowMs) t.slowMs = slowMs
@@ -158,7 +175,7 @@ BarWidget {
     var next = Object.assign({}, nextDue)
     due.forEach(t => next[t.url] = now + intervalFor(t) * 1000)
     nextDue = next
-    checkProc.command = ["bash", Qt.resolvedUrl("check.sh").toString().replace(/^file:\/\//, "")].concat(due.map(t => t.url))
+    checkProc.command = scriptCommand("check.sh", due.map(t => t.url))
     checkProc.running = true
   }
 
@@ -290,7 +307,7 @@ BarWidget {
   }
 
   function loadDetail() {
-    detailProc.command = ["bash", Qt.resolvedUrl("detail.sh").toString().replace(/^file:\/\//, ""), detailUrl, String(slowFor(detailUrl))]
+    detailProc.command = scriptCommand("detail.sh", [detailUrl, String(slowFor(detailUrl))])
     detailProc.running = true
   }
 
@@ -369,7 +386,15 @@ BarWidget {
     atomicWrites: true
     printErrors: false
     onLoaded: {
-      try { root.config = Object.assign({ interval: 300, warnDays: 14, slowMs: 2000, targets: [] }, JSON.parse(text())) }
+      try {
+        var c = Object.assign({ interval: 300, warnDays: 14, slowMs: 2000, targets: [] }, JSON.parse(text()))
+        // The file can be edited by hand: keep only well-formed, unique URLs, up to maxTargets.
+        var seen = {}
+        c.targets = (Array.isArray(c.targets) ? c.targets : [])
+          .filter(t => t && root.wellFormed(t.url) && !seen[t.url] && (seen[t.url] = true))
+          .slice(0, root.maxTargets)
+        root.config = c
+      }
       catch (e) { console.warn("exeque.omarchy-http-uptime: invalid " + root.configPath + ": " + e) }
     }
     onFileChanged: reload()
@@ -756,6 +781,7 @@ BarWidget {
                     visible: root.editing && !row.confirmingDelete
                     width: parent.width
                     text: row.modelData.url
+                    maximumLength: root.maxUrlLength
                     foreground: row.invalid ? (root.bar ? root.bar.urgent : Color.urgent) : Color.foreground
                     onTextEdited: { row.draftUrl = text; row.invalid = false }
                     onAccepted: if (row.dirty) row.commit()
@@ -806,7 +832,7 @@ BarWidget {
                     visible: !row.confirmingDelete
                     anchors.verticalCenter: parent.verticalCenter
                     fieldWidth: root.colNumber
-                    from: 10
+                    from: root.minInterval
                     to: 86400
                     stepSize: 30
                     value: root.intervalFor(row.modelData)
@@ -1093,7 +1119,9 @@ BarWidget {
               anchors.right: addControls.left
               anchors.rightMargin: root.colGap
               anchors.verticalCenter: parent.verticalCenter
-              placeholderText: "https://example.com/health"
+              enabled: root.targets.length < root.maxTargets
+              maximumLength: root.maxUrlLength
+              placeholderText: enabled ? "https://example.com/health" : "Limit of " + root.maxTargets + " URLs reached"
               onAccepted: addButton.clicked()
             }
 
@@ -1109,7 +1137,7 @@ BarWidget {
                 id: addInterval
                 anchors.verticalCenter: parent.verticalCenter
                 fieldWidth: root.colNumber
-                from: 10
+                from: root.minInterval
                 to: 86400
                 stepSize: 30
                 value: root.config.interval
@@ -1131,6 +1159,7 @@ BarWidget {
                 width: root.colAction
                 text: "Add"
                 bordered: true
+                enabled: urlField.enabled
                 onClicked: if (root.addTarget(urlField.text, addInterval.field.value, addSlow.field.value)) urlField.text = ""
               }
             }
@@ -1147,7 +1176,7 @@ BarWidget {
 
             NumberField {
               label: "Default interval (s)"
-              from: 10
+              from: root.minInterval
               to: 86400
               stepSize: 30
               value: root.config.interval

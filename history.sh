@@ -2,6 +2,13 @@
 # epoch, up (0/1: 2xx with valid SSL), status, http code, ms
 history_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/http-uptime
 
+# Resource bounds (Uptime.qml mirrors the target and URL limits).
+# 100k records hold 30 days of history at the 30 s minimum interval.
+max_records=100000
+max_parallel=6
+max_targets=50
+max_url_length=2048
+
 # Readable name plus a short hash, so URLs that sanitize to the same name never share a file.
 history_file() {
   local safe hash

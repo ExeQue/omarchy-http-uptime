@@ -42,24 +42,33 @@ check() {
     *) status=down ;;
   esac
 
+  detail=${detail:0:200}
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$url" "$status" "$code" "$ms" "$days" "$detail"
   printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$([[ $status == ok ]] && echo 1 || echo 0)" "$status" "$code" "$ms" >> "$(history_file "$url")"
 }
 
-for url in "$@"; do check "$url" & done
+# Bounded: at most max_targets URLs of at most max_url_length characters, max_parallel at a time.
+n=0
+for url in "$@"; do
+  (( n++ < max_targets )) || break
+  (( ${#url} <= max_url_length )) || continue
+  while (( $(jobs -rp | wc -l) >= max_parallel )); do wait -n; done
+  check "$url" &
+done
 wait
 
 declare -A kept slow
 if [[ -n ${UPTIME_KEEP:-} ]]; then
   urls=()
   while IFS=$'\t' read -r url ms; do
+    (( ${#urls[@]} < max_targets && ${#url} <= max_url_length )) || continue
     urls+=("$url"); slow[$url]=$ms; kept[$(history_file "$url")]=1
   done <<< "$UPTIME_KEEP"
   for file in "$history_dir"/*.tsv; do
     [[ -e $file && -z ${kept[$file]:-} && -n $(find "$file" -mmin +10) ]] && rm -f "$file"
   done
 else
-  urls=("$@")
+  urls=("${@:1:max_targets}")
 fi
 
 # ponytail: stats rescan each URL's 30-day history every run; fine for a handful of URLs,
@@ -67,6 +76,10 @@ fi
 for url in "${urls[@]}"; do
   file=$(history_file "$url")
   [[ -f $file ]] || continue
+  # Cap records per file before scanning it.
+  if (( $(wc -l < "$file") > max_records )); then
+    tail -n "$max_records" "$file" > "$file.cap" && mv "$file.cap" "$file"
+  fi
   awk -F'\t' -v url="$url" -v slow="${slow[$url]:-}" -v now="$(date +%s)" -v out="$file.tmp" '
     BEGIN { span[1] = 86400; span[2] = 7 * 86400; span[3] = 30 * 86400; printf "" > out }
     now - $1 > 30 * 86400 { pruned = 1; next }
