@@ -27,6 +27,19 @@ An Omarchy bar widget that monitors your URLs: 2xx responses, valid SSL certific
 omarchy plugin add https://github.com/ExeQue/omarchy-http-uptime --enable
 ```
 
+## Uninstall
+
+```sh
+omarchy plugin remove exeque.omarchy-http-uptime
+```
+
+This removes the plugin and its bar widget. Your settings and history are kept in case you reinstall. To delete them too:
+
+```sh
+rm -f ~/.config/omarchy/http-uptime.json
+rm -rf ~/.local/state/omarchy/http-uptime
+```
+
 ## Usage
 
 | Action | Result |
