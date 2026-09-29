@@ -57,11 +57,15 @@ BarWidget {
   readonly property real colGap: Style.space(8)
 
   readonly property var resultList: targets.map(t => results[t.url]).filter(r => r)
-  readonly property int problems: resultList.filter(r => r.status !== "ok").length
-  readonly property int worst: resultList.reduce((m, r) => Math.max(m, severity(r.status)), 0)
-  // Theme yellow for degraded URLs; the shell's Color only exposes urgent, so read it from colors.toml.
-  property color warning: "#e5c07b"
-  property color good: "#98c379"
+  // Skipped checks (severity 1, usually a briefly locked keyring) show in the list but don't count
+  // as problems or colour the bar icon.
+  readonly property int problems: resultList.filter(r => severity(r.status) >= 2).length
+  readonly property int worst: resultList.reduce((m, r) => severity(r.status) >= 2 ? Math.max(m, severity(r.status)) : m, 0)
+  // Fixed status colours, so they mean the same in every theme (theme palettes often map
+  // "yellow" or "blue" to other hues). Red comes from the theme's urgent colour.
+  readonly property color warning: "#f5c542"
+  readonly property color good: "#5cb85c"
+  readonly property color info: "#4ea1ff"
   // Display order: failing first, then degraded, then healthy; configured order within each group.
   readonly property var displayTargets: targets
     .map((t, i) => ({ t: t, i: i, s: severityOf(t.url) }))
@@ -240,22 +244,23 @@ BarWidget {
     checkProc.running = true
   }
 
-  // 0 = healthy, 1 = degraded (slow, certificate expiring), 2 = failing (non-2xx, unreachable, invalid SSL)
+  // 0 = healthy, 1 = not checked (skipped: keyring locked or header value missing), 2 = degraded
+  // (slow, certificate expiring), 3 = failing (non-2xx, unreachable, invalid SSL)
   function severity(status) {
-    return status === "ok" ? 0 : status === "slow" || status === "expiring" || status === "skipped" ? 1 : 2
+    return status === "ok" ? 0 : status === "skipped" ? 1 : status === "slow" || status === "expiring" ? 2 : 3
   }
 
   // Title says what happened; the body starts with a dot in the state's colour (red down, yellow
-  // degraded, green recovered; the body renders StyledText). Clicking the notification opens this
+  // degraded, blue not checked, green recovered; the body renders StyledText). Clicking the notification opens this
   // URL's detail view (see IpcHandler).
   function notify(r, recovered) {
     var level = severity(r.status)
     var host = r.url.replace(/^https?:\/\//, "").replace(/\/$/, "")
-    var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error", skipped: "Check skipped" }[r.status] || "Down"
+    var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error", skipped: "Keyring locked" }[r.status] || "Down"
     var text = recovered ? "Responding normally (" + r.ms + " ms)" : r.detail
     var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     Quickshell.execDetached(["omarchy-notification-send", "--app-name", "HTTP Uptime",
-      "-u", level === 2 && !recovered ? "critical" : "normal",
+      "-u", level === 3 && !recovered ? "critical" : "normal",
       title + ": " + host, "<font color=\"" + (recovered ? good : severityColor(level)) + "\">●</font> " + escaped,
       "--exec", "omarchy-shell", moduleName, "showDetail", r.url])
   }
@@ -284,8 +289,9 @@ BarWidget {
       // Notify when a URL gets worse than its previous check, and once when it recovers.
       var before = results[r.url] ? severity(results[r.url].status) : 0
       var after = severity(r.status)
+      // No "Recovered" after a skipped check: that was the keyring, not the service.
       if (after > before) notify(r, false)
-      else if (after === 0 && before > 0) notify(r, true)
+      else if (after === 0 && before > 1) notify(r, true)
       next[r.url] = r
     })
     results = next
@@ -299,7 +305,7 @@ BarWidget {
   }
 
   function severityColor(level) {
-    return level === 0 ? Color.foreground : level === 1 ? warning : root.bar ? root.bar.urgent : Color.urgent
+    return [Color.foreground, info, warning, root.bar ? root.bar.urgent : Color.urgent][level]
   }
 
   function statusColor(r) {
@@ -332,7 +338,7 @@ BarWidget {
       if (!r) return lines.push("… " + short(t.url) + " — checking")
       var at = " · checked " + Qt.formatDateTime(new Date(r.checked), "HH:mm:ss")
       if (r.status === "ok") lines.push("✓ " + short(t.url) + " — " + r.code + " · " + r.ms + " ms" + at)
-      else lines.push((severity(r.status) === 2 ? "✗ " : "! ") + short(t.url) + " — " + r.detail
+      else lines.push(["", "? ", "! ", "✗ "][severity(r.status)] + short(t.url) + " — " + r.detail
         + (sinceText(r) ? " · " + sinceText(r) : "") + at)
     })
     var day = resultList.map(r => uptime[r.url] ? uptime[r.url].day : "").filter(v => v !== "")
@@ -342,7 +348,7 @@ BarWidget {
 
   // "down since 14:02 (23 min)" / "slow since …" for the ongoing outage or slow streak of a result.
   function sinceText(r) {
-    var key = severity(r.status) === 2 ? "downSince" : r.status === "slow" ? "slowSince" : ""
+    var key = severity(r.status) === 3 ? "downSince" : r.status === "slow" ? "slowSince" : ""
     var since = key && uptime[r.url] ? uptime[r.url][key] : 0
     if (!since) return ""
     var d = new Date(since)
@@ -463,19 +469,6 @@ BarWidget {
       catch (e) { console.warn("exeque.omarchy-http-uptime: invalid " + root.configPath + ": " + e) }
     }
     onFileChanged: reload()
-  }
-
-  FileView {
-    path: Color.currentThemePath + "/colors.toml"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: {
-      var yellow = text().match(/^yellow\s*=\s*"([^"]+)"/m)
-      var green = text().match(/^green\s*=\s*"([^"]+)"/m)
-      if (yellow) root.warning = yellow[1]
-      if (green) root.good = green[1]
-    }
   }
 
   Process {
