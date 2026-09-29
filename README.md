@@ -6,7 +6,7 @@ An Omarchy bar widget that monitors your URLs: 2xx responses, valid SSL certific
 
 ## Features
 
-- **Status at a glance.** The bar icon turns red when a URL is down or has an SSL error, and yellow when a URL is slow or its certificate expires soon. Hover it for a summary of every URL.
+- **Status at a glance.** The bar icon turns red when a URL is down or has an SSL error, yellow when a URL is slow or its certificate expires soon, The status colours are fixed, so they look the same in every theme. Hover it for a summary of every URL.
 - **Checks.** A URL is up when it answers with a 2xx status (redirects are followed) and a valid certificate: chain, hostname and expiry are all verified. Requests time out after 10 seconds.
 - **Slow responses.** Set a response-time limit globally or per URL.
 - **Certificate expiry warnings** a configurable number of days ahead.
@@ -62,7 +62,7 @@ In settings, click the key icon on a row, enter a header name and value, and pre
 - **Storage.** Values are stored in the Secret Service keyring (gnome-keyring, part of a standard Omarchy install), which is encrypted and unlocked at login. The config file holds only the header names.
 - **Visibility.** Values are passed through stdin and a file descriptor (`curl -H @/dev/fd/N`), never on a command line where other processes could read them. They are never shown in the panel after saving.
 - **Redirects.** URLs with custom headers do not follow redirects, so headers can't leak to another host. A 3xx response is reported as down with an explanation.
-- **Locked keyring.** If a value can't be read, for example because the keyring is locked, the check is skipped (yellow) and not recorded in the history.
+- **Locked keyring.** If a value can't be read, for example because the keyring is locked, the entry turns blue and you get a "Keyring locked" notification. The check is skipped and not recorded in the history, and the bar icon stays neutral because this is usually temporary.
 - **Cleanup.** Renaming a URL moves its headers along. Removing a URL deletes its headers from the keyring.
 - **Validation.** Names must be valid HTTP header tokens. Values may not contain line breaks and are at most 4096 characters.
 
