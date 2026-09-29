@@ -34,12 +34,15 @@ omarchy plugin add https://github.com/ExeQue/omarchy-http-uptime --enable
 omarchy plugin remove exeque.omarchy-http-uptime
 ```
 
-This removes the plugin and its bar widget. Your settings and history are kept in case you reinstall. To delete them too:
+This removes the plugin and its bar widget. Your settings, history and custom header values are kept in case you reinstall; Omarchy has no uninstall hook to remove them. To delete them too:
 
 ```sh
 rm -f ~/.config/omarchy/http-uptime.json
 rm -rf ~/.local/state/omarchy/http-uptime
+secret-tool clear service exeque.omarchy-http-uptime
 ```
+
+Removing a single URL in settings deletes its history and header values right away.
 
 ## Usage
 
