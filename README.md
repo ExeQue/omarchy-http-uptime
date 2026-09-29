@@ -13,6 +13,7 @@ An Omarchy bar widget that monitors your URLs: 2xx responses, valid SSL certific
 - **Notifications** when a URL gets worse than its previous check (down, SSL error, slow, certificate expiring) and when it recovers. Clicking a notification opens that URL's details.
 - **Panel** grouped by severity: down first, then slow, then healthy. It shows when the current outage or slow streak began.
 - **Detail view** per URL, with uptime and slow-response charts for 24h, 7d and 30d, and the last 10 checks with status, HTTP code and response time.
+- **Custom headers** per URL (up to 10), for example `Authorization`. Values are stored encrypted in the system keyring.
 - **Settings in the panel.** Add, edit, reorder (drag and drop) and remove URLs, and set the check interval and slow limit per URL.
 
 ## Screenshots
@@ -51,6 +52,17 @@ rm -rf ~/.local/state/omarchy/http-uptime
 
 In settings, a row with unsaved changes shows ✓ (save) and ↺ (revert) in place of the trash icon. Enter in the URL field also saves the row. Unsaved changes are discarded when you leave settings.
 
+## Custom headers
+
+In settings, click the key icon on a row, enter a header name and value, and press **Set**. Setting an existing name replaces its value.
+
+- **Storage.** Values are stored in the Secret Service keyring (gnome-keyring, part of a standard Omarchy install), which is encrypted and unlocked at login. The config file holds only the header names.
+- **Visibility.** Values are passed through stdin and a file descriptor (`curl -H @/dev/fd/N`), never on a command line where other processes could read them. They are never shown in the panel after saving.
+- **Redirects.** URLs with custom headers do not follow redirects, so headers can't leak to another host. A 3xx response is reported as down with an explanation.
+- **Locked keyring.** If a value can't be read, for example because the keyring is locked, the check is skipped (yellow) and not recorded in the history.
+- **Cleanup.** Renaming a URL moves its headers along. Removing a URL deletes its headers from the keyring.
+- **Validation.** Names must be valid HTTP header tokens. Values may not contain line breaks and are at most 4096 characters.
+
 ## Configuration
 
 Settings are stored in `~/.config/omarchy/http-uptime.json`, which the panel reads and writes. You can also edit the file by hand; changes apply on save.
@@ -62,7 +74,7 @@ Settings are stored in `~/.config/omarchy/http-uptime.json`, which the panel rea
   "slowMs": 2000,
   "targets": [
     { "url": "https://example.com/" },
-    { "url": "https://api.example.com/health", "interval": 60, "slowMs": 500 }
+    { "url": "https://api.example.com/health", "interval": 60, "slowMs": 500, "headers": ["Authorization"] }
   ]
 }
 ```
@@ -73,6 +85,7 @@ Settings are stored in `~/.config/omarchy/http-uptime.json`, which the panel rea
 | `warnDays` | Warn when a certificate expires within this many days |
 | `slowMs` | Default response time, in milliseconds, above which a URL counts as slow |
 | `targets[].interval`, `targets[].slowMs` | Per-URL overrides |
+| `targets[].headers` | Names of custom headers; the values are in the keyring |
 
 ## Where data is stored
 
@@ -81,6 +94,7 @@ Everything stays on your machine.
 | What | Location |
 |---|---|
 | Settings and monitored URLs | `~/.config/omarchy/http-uptime.json` |
+| Custom header values | System keyring (Secret Service), attributes `service=exeque.omarchy-http-uptime`, `url`, `header` |
 | Check history | `~/.local/state/omarchy/http-uptime/<url>-<hash>.tsv` (under `$XDG_STATE_HOME` when that is set) |
 | Plugin code | `~/.config/omarchy/plugins/exeque.omarchy-http-uptime/` |
 
@@ -93,7 +107,7 @@ Each history file holds one URL, with one line per check: epoch, up (0/1), statu
 
 ## Dependencies
 
-`bash`, `curl`, `openssl`, `awk`, `md5sum` and `omarchy-notification-send`, all present on a standard Omarchy install.
+`bash`, `curl`, `openssl`, `awk`, `md5sum`, `secret-tool` (libsecret, with gnome-keyring) and `omarchy-notification-send`, all present on a standard Omarchy install.
 
 ## Limits
 
