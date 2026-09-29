@@ -89,7 +89,7 @@ BarWidget {
 
   // Saves a settings row's edits in one go. Only changed values are stored, so untouched ones keep
   // following the global defaults. Returns false (nothing saved) for an invalid or duplicate URL.
-  // ponytail: history is keyed by URL, so a renamed entry starts a fresh uptime history.
+  // A changed URL takes its history along (rename.sh moves the file).
   function commitTarget(url, draftUrl, interval, slowMs) {
     draftUrl = draftUrl.trim()
     if (draftUrl !== url && !validUrl(draftUrl)) return false
@@ -98,6 +98,12 @@ BarWidget {
     if (draftUrl !== url) patch.url = draftUrl
     if (interval !== intervalFor(t)) patch.interval = interval
     if (slowMs !== slowFor(url)) patch.slowMs = slowMs
+    if (patch.url) {
+      Quickshell.execDetached(["bash", Qt.resolvedUrl("rename.sh").toString().replace(/^file:\/\//, ""), url, draftUrl])
+      var moved = Object.assign({}, uptime)
+      moved[draftUrl] = moved[url]
+      uptime = moved
+    }
     save({ targets: targets.map(x => x.url === url ? Object.assign({}, x, patch) : x) })
     recheck([draftUrl])
     return true

@@ -6,7 +6,9 @@
 # UPTIME_KEEP (or the arguments) gives uptime and when the current outage / slow streak began:
 #   stats, url, 24h %, 7d %, 30d %, down-since epoch, slow-since epoch (empty when not ongoing)
 # A check is slow when it is up and slower than the URL's slow-ms from UPTIME_KEEP.
-# History files for URLs missing from UPTIME_KEEP (removed or renamed entries) are deleted.
+# History files for URLs missing from UPTIME_KEEP (removed entries) are deleted once untouched for
+# 10 minutes, so a rename in flight (rename.sh) or a check started before a config change can't
+# lose history.
 
 source "$(dirname "$0")/history.sh"
 mkdir -p "$history_dir"
@@ -54,7 +56,7 @@ if [[ -n ${UPTIME_KEEP:-} ]]; then
     urls+=("$url"); slow[$url]=$ms; kept[$(history_file "$url")]=1
   done <<< "$UPTIME_KEEP"
   for file in "$history_dir"/*.tsv; do
-    [[ -e $file && -z ${kept[$file]:-} ]] && rm -f "$file"
+    [[ -e $file && -z ${kept[$file]:-} && -n $(find "$file" -mmin +10) ]] && rm -f "$file"
   done
 else
   urls=("$@")

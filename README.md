@@ -84,7 +84,7 @@ Everything stays on your machine.
 | Check history | `~/.local/state/omarchy/http-uptime/<url>-<hash>.tsv` (under `$XDG_STATE_HOME` when that is set) |
 | Plugin code | `~/.config/omarchy/plugins/exeque.omarchy-http-uptime/` |
 
-Each history file holds one URL, with one line per check: epoch, up (0/1), status, HTTP code and response time in milliseconds. The file name is a readable form of the URL plus a short hash. Lines older than 30 days are pruned, and a URL's file is deleted when you remove or rename that URL. Delete the directory to reset all history.
+Each history file holds one URL, with one line per check: epoch, up (0/1), status, HTTP code and response time in milliseconds. The file name is a readable form of the URL plus a short hash. Lines older than 30 days are pruned. Editing an entry's URL keeps its history. Removing an entry asks for confirmation when it has history, and its file is deleted about 10 minutes later. Delete the directory to reset all history.
 
 ## Privacy
 
