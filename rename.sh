@@ -5,10 +5,10 @@
 # cleanup (which only removes files untouched for 10 minutes) leaves it alone.
 source "$(dirname "$0")/history.sh"
 old=$(history_file "$1") new=$(history_file "$2")
-[[ -f $old ]] || exit 0
+[[ -f $old && ! -L $old && ! -L $new ]] || exit 0
 if [[ -f $new ]]; then
-  sort -n "$old" "$new" > "$new.tmp" && mv "$new.tmp" "$new" && rm -f "$old"
+  merged=$(make_temp) && sort -n "$old" "$new" > "$merged" && mv -- "$merged" "$new" && rm -f -- "$old"
 else
-  mv "$old" "$new"
+  mv -- "$old" "$new"
 fi
-touch "$new"
+touch -- "$new"

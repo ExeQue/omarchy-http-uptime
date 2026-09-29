@@ -14,6 +14,12 @@ max_header_value=4096
 keyring_lookup_timeout=3
 keyring_write_timeout=30
 
+# Temporary files are created with mktemp in the history directory (same filesystem, so mv is an
+# atomic rename) and removed on exit. History files that are symlinks are never read or written.
+temps=()
+make_temp() { local t; t=$(mktemp "$history_dir/.tmp.XXXXXXXX") || return 1; temps+=("$t"); printf '%s' "$t"; }
+trap 'rm -f -- "${temps[@]}"' EXIT
+
 # Readable name plus a short hash, so URLs that sanitize to the same name never share a file.
 history_file() {
   local safe hash
