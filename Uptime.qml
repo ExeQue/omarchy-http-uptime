@@ -780,6 +780,7 @@ BarWidget {
                     id: urlInput
                     visible: root.editing && !row.confirmingDelete
                     width: parent.width
+                    height: intervalInput.field.height
                     text: row.modelData.url
                     maximumLength: root.maxUrlLength
                     foreground: row.invalid ? (root.bar ? root.bar.urgent : Color.urgent) : Color.foreground
@@ -1114,6 +1115,7 @@ BarWidget {
 
             TextField {
               id: urlField
+              height: addInterval.field.height
               anchors.left: parent.left
               anchors.leftMargin: root.colGrip
               anchors.right: addControls.left
