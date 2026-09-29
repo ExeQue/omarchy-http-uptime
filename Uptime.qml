@@ -618,12 +618,19 @@ BarWidget {
                 draftSlow = root.slowFor(modelData.url)
                 invalid = false
                 urlInput.text = draftUrl
-                // Typed text is only committed to `value` on Enter or blur, so reset the text as well;
-                // otherwise a focused field keeps the typed text and commits it later.
-                for (var input of [intervalInput, slowInput]) {
-                  input.field.value = input === intervalInput ? draftInterval : draftSlow
-                  input.field.contentItem.text = input.field.displayText
-                }
+                // Typed text is only committed to `value` on Enter or blur, and SpinBox's displayText follows
+                // the typed text, so format the value explicitly; otherwise the field keeps the typed text
+                // and commits it later.
+                resetSpin(intervalInput.field, draftInterval)
+                resetSpin(slowInput.field, draftSlow)
+              }
+
+              // Setting the text breaks its binding to displayText, so restore it afterwards (displayText
+              // has picked up the formatted text by then).
+              function resetSpin(spin, value) {
+                spin.value = value
+                spin.contentItem.text = spin.textFromValue(value, spin.locale)
+                spin.contentItem.text = Qt.binding(() => spin.displayText)
               }
 
               Connections {
