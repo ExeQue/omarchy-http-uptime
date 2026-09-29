@@ -62,7 +62,8 @@ BarWidget {
   readonly property int problems: resultList.filter(r => severity(r.status) >= 2).length
   readonly property int worst: resultList.reduce((m, r) => severity(r.status) >= 2 ? Math.max(m, severity(r.status)) : m, 0)
   // Fixed status colours, so they mean the same in every theme (theme palettes often map
-  // "yellow" or "blue" to other hues). Red comes from the theme's urgent colour.
+  // "yellow" or "blue" to other hues).
+  readonly property color danger: "#e5534b"
   readonly property color warning: "#f5c542"
   readonly property color good: "#5cb85c"
   readonly property color info: "#4ea1ff"
@@ -305,7 +306,7 @@ BarWidget {
   }
 
   function severityColor(level) {
-    return [Color.foreground, info, warning, root.bar ? root.bar.urgent : Color.urgent][level]
+    return [Color.foreground, info, warning, danger][level]
   }
 
   function statusColor(r) {
@@ -868,7 +869,7 @@ BarWidget {
                     elide: Text.ElideMiddle
                     textFormat: Text.PlainText
                     text: "Delete " + row.modelData.url.replace(/^https?:\/\//, "") + " and its history?"
-                    color: root.bar ? root.bar.urgent : Color.urgent
+                    color: root.danger
                     font.family: Style.font.family
                     font.pixelSize: Style.font.body
                   }
@@ -880,7 +881,7 @@ BarWidget {
                     height: intervalInput.field.height
                     text: row.modelData.url
                     maximumLength: root.maxUrlLength
-                    foreground: row.invalid ? (root.bar ? root.bar.urgent : Color.urgent) : Color.foreground
+                    foreground: row.invalid ? root.danger : Color.foreground
                     onTextEdited: { row.draftUrl = text; row.invalid = false }
                     onAccepted: if (row.dirty) row.commit()
                   }
@@ -991,7 +992,7 @@ BarWidget {
 
                       PanelActionButton {
                         iconText: "\uf1f8"
-                        foreground: root.bar ? root.bar.urgent : Color.urgent
+                        foreground: root.danger
                         hoverColor: foreground
                         tooltipText: "Delete entry and history"
                         onClicked: root.removeTarget(row.modelData.url)
@@ -1227,7 +1228,7 @@ BarWidget {
                   slowBuckets: root.detail && root.detail.slow[modelData.key] ? root.detail.slow[modelData.key] : []
                   slowColor: root.warning
                   bucketSeconds: modelData.size
-                  urgent: root.bar ? root.bar.urgent : Color.urgent
+                  urgent: root.danger
                 }
               }
             }
