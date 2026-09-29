@@ -14,7 +14,7 @@
 # lose history.
 
 source "$(dirname "$0")/history.sh"
-mkdir -p "$history_dir" && chmod 700 "$history_dir"
+enter_history_dir || exit 1
 
 declare -A kept slow headers
 if [[ -n ${UPTIME_KEEP:-} ]]; then
@@ -77,8 +77,8 @@ check() {
 
   detail=${detail:0:200}
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$url" "$status" "$code" "$ms" "$days" "$detail"
-  local hf; hf=$(history_file "$url")
-  [[ -L $hf ]] || printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$([[ $status == ok ]] && echo 1 || echo 0)" "$status" "$code" "$ms" >> "$hf"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$([[ $status == ok ]] && echo 1 || echo 0)" "$status" "$code" "$ms" \
+    | append_nofollow "$(history_file "$url")" 2>/dev/null
 }
 
 # Bounded: at most max_targets URLs of at most max_url_length characters, max_parallel at a time.
@@ -92,7 +92,7 @@ done
 wait
 
 if [[ -n ${UPTIME_KEEP:-} ]]; then
-  for file in "$history_dir"/*.tsv; do
+  for file in *.tsv; do
     [[ -e $file && -z ${kept[$file]:-} && -n $(find "$file" -mmin +10) ]] && rm -f "$file"
   done
 fi
@@ -101,15 +101,15 @@ fi
 # pre-aggregate per hour if files grow past a few MB.
 for url in "${urls[@]}"; do
   file=$(history_file "$url")
-  [[ -f $file && ! -L $file ]] || continue
+  [[ -f $file ]] || continue
   # Cap records per file before scanning it.
-  if (( $(wc -l < "$file") > max_records )); then
-    cap=$(make_temp) && tail -n "$max_records" "$file" > "$cap" && mv -- "$cap" "$file"
+  if (( $(read_nofollow "$file" 2>/dev/null | wc -l) > max_records )); then
+    cap=$(make_temp) && read_nofollow "$file" | tail -n "$max_records" > "$cap" && mv -T -- "$cap" "$file"
   fi
   # awk copies the records it keeps to $out and exits 10 when it pruned any, so the file is only
   # replaced when something changed.
   out=$(make_temp) || continue
-  awk -F'\t' -v url="$url" -v slow="${slow[$url]:-}" -v now="$(date +%s)" -v out="$out" '
+  read_nofollow "$file" 2>/dev/null | awk -F'\t' -v url="$url" -v slow="${slow[$url]:-}" -v now="$(date +%s)" -v out="$out" '
     BEGIN { span[1] = 86400; span[2] = 7 * 86400; span[3] = 30 * 86400 }
     now - $1 > 30 * 86400 { pruned = 1; next }
     { print > out
@@ -121,6 +121,6 @@ for url in "${urls[@]}"; do
       for (w = 1; w <= 3; w++) line = line "\t" (total[w] ? sprintf("%.2f", 100 * up[w] / total[w]) : "")
       print line "\t" since "\t" slowSince
       exit (pruned ? 10 : 0)
-    }' "$file"
-  if (( $? == 10 )); then mv -- "$out" "$file"; else rm -f -- "$out"; fi
+    }'
+  if (( PIPESTATUS[1] == 10 )); then mv -T -- "$out" "$file"; else rm -f -- "$out"; fi
 done

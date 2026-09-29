@@ -6,9 +6,10 @@
 #   slow, day|week|month, pct of checks that were up but slower than SLOW_MS...
 # Windows match `windows` in Uptime.qml: 24 x 1 h, 28 x 6 h, 30 x 1 day.
 source "$(dirname "$0")/history.sh"
+enter_history_dir || exit 0
 history=$(history_file "$1")
 [[ -f $history ]] || exit 0
-tail -n "$max_records" "$history" | awk -F'\t' -v now="$(date +%s)" -v slowms="${2:-0}" '
+read_nofollow "$history" 2>/dev/null | tail -n "$max_records" | awk -F'\t' -v now="$(date +%s)" -v slowms="${2:-0}" '
   BEGIN {
     key[1] = "day";   size[1] = 3600;  count[1] = 24
     key[2] = "week";  size[2] = 21600; count[2] = 28
