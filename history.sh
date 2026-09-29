@@ -8,6 +8,8 @@ max_records=100000
 max_parallel=6
 max_targets=50
 max_url_length=2048
+max_headers=10
+max_header_value=4096
 
 # Readable name plus a short hash, so URLs that sanitize to the same name never share a file.
 history_file() {
