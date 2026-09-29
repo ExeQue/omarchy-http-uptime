@@ -618,8 +618,12 @@ BarWidget {
                 draftSlow = root.slowFor(modelData.url)
                 invalid = false
                 urlInput.text = draftUrl
-                intervalInput.field.value = draftInterval
-                slowInput.field.value = draftSlow
+                // Typed text is only committed to `value` on Enter or blur, so reset the text as well;
+                // otherwise a focused field keeps the typed text and commits it later.
+                for (var input of [intervalInput, slowInput]) {
+                  input.field.value = input === intervalInput ? draftInterval : draftSlow
+                  input.field.contentItem.text = input.field.displayText
+                }
               }
 
               Connections {
