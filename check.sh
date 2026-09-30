@@ -7,7 +7,7 @@
 # host. If a value can't be read (keyring locked), the check is skipped and not recorded.
 # Each result is appended to the URL's history file (see history.sh). Afterwards one line per URL in
 # UPTIME_KEEP (or the arguments) gives uptime and when the current outage / slow streak began:
-#   stats, url, 24h %, 7d %, 30d %, down-since epoch, slow-since epoch (empty when not ongoing)
+#   stats, url, 24h %, 7d %, 30d %, down-since epoch, slow-since epoch (empty when not ongoing), 3h %
 # A check is slow when it is up and slower than the URL's slow-ms from UPTIME_KEEP.
 # History files for URLs missing from UPTIME_KEEP (removed entries) are deleted once untouched for
 # 10 minutes, so a rename in flight (rename.sh) or a check started before a config change can't
@@ -113,16 +113,16 @@ for url in "${urls[@]}"; do
   # replaced when something changed.
   make_temp out || continue
   read_nofollow "$file" 2>/dev/null | awk -F'\t' -v url="$url" -v slow="${slow[$url]:-}" -v now="$(date +%s)" -v out="$out" '
-    BEGIN { span[1] = 86400; span[2] = 7 * 86400; span[3] = 30 * 86400 }
+    BEGIN { span[1] = 86400; span[2] = 7 * 86400; span[3] = 30 * 86400; span[4] = 3 * 3600 }
     now - $1 > 30 * 86400 { pruned = 1; next }
     { print > out
-      for (w = 1; w <= 3; w++) if (now - $1 <= span[w]) { total[w]++; up[w] += $2 }
+      for (w = 1; w <= 4; w++) if (now - $1 <= span[w]) { total[w]++; up[w] += $2 }
       if ($2) since = ""; else if (since == "") since = $1
       if ($2 && slow != "" && $5 != "" && $5 + 0 > slow + 0) { if (slowSince == "") slowSince = $1 } else slowSince = "" }
     END {
       line = "stats\t" url
       for (w = 1; w <= 3; w++) line = line "\t" (total[w] ? sprintf("%.2f", 100 * up[w] / total[w]) : "")
-      print line "\t" since "\t" slowSince
+      print line "\t" since "\t" slowSince "\t" (total[4] ? sprintf("%.2f", 100 * up[4] / total[4]) : "")
       exit (pruned ? 10 : 0)
     }'
   if (( PIPESTATUS[1] == 10 )); then mv -T -- "$out" "$file"; else rm -f -- "$out"; fi

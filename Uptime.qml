@@ -34,11 +34,12 @@ BarWidget {
   readonly property var targets: config.targets || []
   property var results: ({})
   property var uptime: ({})
-  // Detail view: URL shown, plus { checks: [{ time, up, status, code, ms }], series: { day|week|month: [pct] } }
+  // Detail view: URL shown, plus { checks: [{ time, up, status, code, ms }], series: { hour|day|week|month: [pct] } }
   // loaded by detail.sh. Window sizes must match detail.sh.
   property string detailUrl: ""
   property var detail: null
   readonly property var windows: [
+    { key: "hour", label: "3h", size: 600, count: 18 },
     { key: "day", label: "24h", size: 3600, count: 24 },
     { key: "week", label: "7d", size: 21600, count: 28 },
     { key: "month", label: "30d", size: 86400, count: 30 }
@@ -275,7 +276,7 @@ BarWidget {
     text.trim().split("\n").filter(l => l).forEach(function(line) {
       var f = line.split("\t")
       if (f[0] === "stats") {
-        stats[f[1]] = { day: f[2], week: f[3], month: f[4],
+        stats[f[1]] = { hour: f[7], day: f[2], week: f[3], month: f[4],
           downSince: f[5] ? parseInt(f[5]) * 1000 : 0, slowSince: f[6] ? parseInt(f[6]) * 1000 : 0 }
         return
       }

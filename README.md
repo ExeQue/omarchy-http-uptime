@@ -12,7 +12,7 @@ An Omarchy bar widget that monitors your URLs: 2xx responses, valid SSL certific
 - **Certificate expiry warnings** a configurable number of days ahead.
 - **Notifications** when a URL gets worse than its previous check (down, SSL error, slow, certificate expiring) and when it recovers. Clicking a notification opens that URL's details.
 - **Panel** grouped by severity: down first, then slow, then healthy. It shows when the current outage or slow streak began.
-- **Detail view** per URL, with uptime and slow-response charts for 24h, 7d and 30d, and the last 10 checks with status, HTTP code and response time.
+- **Detail view** per URL, with uptime and slow-response charts for 3h, 24h, 7d and 30d, and the last 10 checks with status, HTTP code and response time.
 - **Custom headers** per URL (up to 10), for example `Authorization`. Values are stored encrypted in the system keyring.
 - **Settings in the panel.** Add, edit, reorder (drag and drop) and remove URLs, and set the check interval and slow limit per URL.
 

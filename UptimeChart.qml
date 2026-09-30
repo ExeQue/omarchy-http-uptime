@@ -25,7 +25,8 @@ Item {
   function label(i) {
     var hours = bucketSeconds / 3600
     var ago = buckets.length - 1 - i
-    var span = hours < 24 ? (ago * hours) + "–" + ((ago + 1) * hours) + " h ago" : ago === 0 ? "Last 24 h" : (ago + 1) + " days ago"
+    var mins = bucketSeconds / 60
+    var span = hours < 1 ? (ago * mins) + "–" + ((ago + 1) * mins) + " min ago" : hours < 24 ? (ago * hours) + "–" + ((ago + 1) * hours) + " h ago" : ago === 0 ? "Last 24 h" : (ago + 1) + " days ago"
     var pct = v => parseFloat(v).toFixed(v === "100.00" || v === "0.00" ? 0 : 2) + "%"
     var v = buckets[i]
     if (v === "") return span + ": no checks"
