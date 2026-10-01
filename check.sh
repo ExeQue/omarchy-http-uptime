@@ -5,6 +5,7 @@
 # Custom header values come from the keyring (secrets.sh) and reach curl through a file descriptor,
 # never argv. With custom headers, redirects are not followed so the headers can't leak to another
 # host. If a value can't be read (keyring locked), the check is skipped and not recorded.
+# A failed connection is also skipped and not recorded when this machine has no internet (see online).
 # Each result is appended to the URL's history file (see history.sh). Afterwards one line per URL in
 # UPTIME_KEEP (or the arguments) gives uptime and when the current outage / slow streak began:
 #   stats, url, 24h %, 7d %, 30d %, down-since epoch, slow-since epoch (empty when not ongoing), 3h %
@@ -29,6 +30,16 @@ if [[ -n ${UPTIME_KEEP:-} ]]; then
 else
   urls=("${@:1:max_targets}")
 fi
+
+# Asks NetworkManager for a fresh connectivity check (its own configured probe, not a request from
+# this plugin). Without NetworkManager, or with its check disabled, a default route counts as online.
+online() {
+  case $(timeout 5 nmcli networking connectivity check 2>/dev/null) in
+    full) return 0 ;;
+    none|limited|portal) return 1 ;;
+  esac
+  [[ -n $(ip route show default 2>/dev/null; ip -6 route show default 2>/dev/null) ]]
+}
 
 check() {
   local url=$1 code secs ms rc days="" detail="" status host port end name value lines="" n=0
@@ -77,6 +88,11 @@ check() {
       esac ;;
     *) status=down ;;
   esac
+
+  if [[ $status == down && $rc != 0 ]] && ! online; then
+    printf '%s\t%s\t\t\t\t%s\n' "$url" skipped "No internet connection"
+    return
+  fi
 
   detail=${detail:0:200}
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$url" "$status" "$code" "$ms" "$days" "$detail"

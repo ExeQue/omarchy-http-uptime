@@ -246,7 +246,7 @@ BarWidget {
     checkProc.running = true
   }
 
-  // 0 = healthy, 1 = not checked (skipped: keyring locked or header value missing), 2 = degraded
+  // 0 = healthy, 1 = not checked (skipped: keyring locked, header value missing or no internet), 2 = degraded
   // (slow, certificate expiring), 3 = failing (non-2xx, unreachable, invalid SSL)
   function severity(status) {
     return status === "ok" ? 0 : status === "skipped" ? 1 : status === "slow" || status === "expiring" ? 2 : 3
@@ -258,7 +258,7 @@ BarWidget {
   function notify(r, recovered) {
     var level = severity(r.status)
     var host = r.url.replace(/^https?:\/\//, "").replace(/\/$/, "")
-    var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error", skipped: "Keyring locked" }[r.status] || "Down"
+    var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error", skipped: "Not checked" }[r.status] || "Down"
     var text = recovered ? "Responding normally (" + r.ms + " ms)" : r.detail
     var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     Quickshell.execDetached(["omarchy-notification-send", "--app-name", "HTTP Uptime",
@@ -291,8 +291,9 @@ BarWidget {
       // Notify when a URL gets worse than its previous check, and once when it recovers.
       var before = results[r.url] ? severity(results[r.url].status) : 0
       var after = severity(r.status)
-      // No "Recovered" after a skipped check: that was the keyring, not the service.
-      if (after > before) notify(r, false)
+      // No "Recovered" after a skipped check: that was the keyring or the connection, not the service.
+      // Losing the connection is not notified at all; it would fire once per URL.
+      if (after > before && r.detail !== "No internet connection") notify(r, false)
       else if (after === 0 && before > 1) notify(r, true)
       next[r.url] = r
     })

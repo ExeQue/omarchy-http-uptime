@@ -62,7 +62,7 @@ In settings, click the key icon on a row, enter a header name and value, and pre
 - **Storage.** Values are stored in the Secret Service keyring (gnome-keyring, part of a standard Omarchy install), which is encrypted and unlocked at login. The config file holds only the header names.
 - **Visibility.** Values are passed through stdin and a file descriptor (`curl -H @/dev/fd/N`), never on a command line where other processes could read them. They are never shown in the panel after saving.
 - **Redirects.** URLs with custom headers do not follow redirects, so headers can't leak to another host. A 3xx response is reported as down with an explanation.
-- **Locked keyring.** If a value can't be read, for example because the keyring is locked, the entry turns blue and you get a "Keyring locked" notification. The check is skipped and not recorded in the history, and the bar icon stays neutral because this is usually temporary.
+- **Locked keyring.** If a value can't be read, for example because the keyring is locked, the entry turns blue and you get a "Not checked" notification. The check is skipped and not recorded in the history, and the bar icon stays neutral because this is usually temporary.
 - **Cleanup.** Renaming a URL moves its headers along. Removing a URL deletes its headers from the keyring.
 - **Validation.** Names must be valid HTTP header tokens. Values may not contain line breaks and are at most 4096 characters.
 
@@ -106,6 +106,7 @@ Each history file holds one URL, with one line per check: epoch, up (0/1), statu
 ## Privacy
 
 - The plugin sends requests only to the URLs you add. It makes an HTTPS request with `curl`, and an `openssl` connection to read certificate expiry.
+- When a request fails to connect, the plugin asks NetworkManager for a connectivity check (`nmcli networking connectivity check`), which uses the probe URL configured in NetworkManager. If the machine is offline, the check is skipped and not recorded, so a lost connection doesn't count as downtime. Without NetworkManager, a missing default route counts as offline.
 - There are no services, no background daemons outside the shell, and no privilege escalation.
 
 ## Dependencies
