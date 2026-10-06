@@ -32,6 +32,10 @@ BarWidget {
   readonly property int maxHeaderValue: 4096
 
   readonly property var targets: config.targets || []
+  // Paused targets ("disabled": true) and a globally paused config ("paused": true) are not checked
+  // automatically. Paused targets keep their history and don't count towards the bar icon.
+  readonly property var activeTargets: targets.filter(t => !t.disabled)
+  readonly property bool paused: !!config.paused
   property var results: ({})
   property var uptime: ({})
   // Detail view: URL shown, plus { checks: [{ time, up, status, code, ms }], series: { hour|day|week|month: [pct] } }
@@ -57,7 +61,7 @@ BarWidget {
   readonly property real colHeaders: Style.space(30)
   readonly property real colGap: Style.space(8)
 
-  readonly property var resultList: targets.map(t => results[t.url]).filter(r => r)
+  readonly property var resultList: activeTargets.map(t => results[t.url]).filter(r => r)
   // Skipped checks (severity 1, usually a briefly locked keyring) show in the list but don't count
   // as problems or colour the bar icon.
   readonly property int problems: resultList.filter(r => severity(r.status) >= 2).length
@@ -68,9 +72,9 @@ BarWidget {
   readonly property color warning: "#f5c542"
   readonly property color good: "#5cb85c"
   readonly property color info: "#4ea1ff"
-  // Display order: failing first, then degraded, then healthy; configured order within each group.
+  // Display order: failing first, then degraded, then healthy, then paused; configured order within each group.
   readonly property var displayTargets: targets
-    .map((t, i) => ({ t: t, i: i, s: severityOf(t.url) }))
+    .map((t, i) => ({ t: t, i: i, s: rank(t) }))
     .sort((a, b) => b.s - a.s || a.i - b.i)
     .map(x => x.t)
 
@@ -84,9 +88,13 @@ BarWidget {
     return results[url] ? severity(results[url].status) : 0
   }
 
-  // True when entry i of displayTargets starts a new severity group (down → slow/expiring → up).
+  function rank(t) {
+    return t.disabled ? -1 : severityOf(t.url)
+  }
+
+  // True when entry i of displayTargets starts a new severity group (down → slow/expiring → up → paused).
   function sectionStart(i) {
-    return i > 0 && i < displayTargets.length && severityOf(displayTargets[i].url) !== severityOf(displayTargets[i - 1].url)
+    return i > 0 && i < displayTargets.length && rank(displayTargets[i]) !== rank(displayTargets[i - 1])
   }
 
   function intervalFor(t) { return Math.max(minInterval, t.interval || config.interval) }
@@ -204,6 +212,18 @@ BarWidget {
     save({ targets: targets.map(t => t.url === url ? Object.assign({}, t, patch) : t) })
   }
 
+  // undefined drops the key from the saved JSON, so a resumed target looks like it never was paused.
+  function toggleTarget(url) {
+    var t = targets.find(t => t.url === url)
+    patchTarget(url, { disabled: t.disabled ? undefined : true })
+    if (t.disabled) recheck([url])
+  }
+
+  function togglePaused() {
+    save({ paused: paused ? undefined : true })
+    refresh(false)
+  }
+
   // Keyring operations run one at a time through secrets.sh. Values go over stdin, never argv.
   property var secretQueue: []
 
@@ -233,11 +253,12 @@ BarWidget {
   }
 
   // ponytail: checks run one batch at a time; URLs due while a batch runs wait for the next 10 s tick.
+  // all = a manual "check all now", which still runs while globally paused; paused targets never run.
   function refresh(all) {
     if (leader() !== root) return leader().refresh(all)
-    if (checkProc.running) return
+    if (checkProc.running || (paused && !all)) return
     var now = Date.now()
-    var due = targets.filter(t => all || (nextDue[t.url] || 0) <= now)
+    var due = activeTargets.filter(t => all || (nextDue[t.url] || 0) <= now)
     if (!due.length) return
     var next = Object.assign({}, nextDue)
     due.forEach(t => next[t.url] = now + intervalFor(t) * 1000)
@@ -280,6 +301,9 @@ BarWidget {
           downSince: f[5] ? parseInt(f[5]) * 1000 : 0, slowSince: f[6] ? parseInt(f[6]) * 1000 : 0 }
         return
       }
+      var t = targets.find(t => t.url === f[0])
+      // Paused while its check was running.
+      if (t && t.disabled) return
       var r = { url: f[0], status: f[1], code: f[2], ms: parseInt(f[3]), days: f[4] === "" ? null : parseInt(f[4]), detail: f[5] || "", checked: Date.now() }
       if (r.status === "ok" && r.days !== null && r.days < config.warnDays) {
         r.status = "expiring"
@@ -334,10 +358,12 @@ BarWidget {
   function tooltipSummary() {
     if (!targets.length) return "HTTP Uptime: no URLs monitored\nClick to open, then add URLs in settings"
     var short = url => url.replace(/^https?:\/\//, "").replace(/\/$/, "")
-    var lines = ["HTTP Uptime · " + (problems ? problems + " of " + targets.length + " need attention" : "all " + targets.length + " up")]
+    var n = activeTargets.length
+    var lines = ["HTTP Uptime · " + (paused ? "paused · " : "") + (problems ? problems + " of " + n + " need attention" : "all " + n + " up")]
     displayTargets.forEach(function(t, i) {
       var r = results[t.url]
       if (sectionStart(i)) lines.push("──")
+      if (t.disabled) return lines.push("⏸ " + short(t.url) + " — paused")
       if (!r) return lines.push("… " + short(t.url) + " — checking")
       var at = " · checked " + Qt.formatDateTime(new Date(r.checked), "HH:mm:ss")
       if (r.status === "ok") lines.push("✓ " + short(t.url) + " — " + r.code + " · " + r.ms + " ms" + at)
@@ -542,7 +568,7 @@ BarWidget {
     text: root.icon
     slotSize: Style.bar.statusSlot
     fontSize: Style.font.caption
-    dimmed: root.targets.length === 0
+    dimmed: root.targets.length === 0 || root.paused
     active: root.worst > 0
     activeColor: root.severityColor(root.worst)
     tooltipText: root.opened ? "" : root.tooltipSummary()
@@ -635,6 +661,13 @@ BarWidget {
                 root.detailUrl = ""
                 root.detail = null
               }
+            }
+
+            PanelActionButton {
+              iconText: root.paused ? "\uf04b" : "\uf04c"
+              foreground: root.paused ? root.warning : Color.foreground
+              tooltipText: root.paused ? "Resume checks" : "Pause all checks"
+              onClicked: root.togglePaused()
             }
 
             PanelActionButton {
@@ -852,14 +885,14 @@ BarWidget {
                   width: Style.space(8)
                   height: width
                   radius: width / 2
-                  color: root.dotColor(row.result)
+                  color: row.modelData.disabled ? Color.muted : root.dotColor(row.result)
                 }
 
                 Column {
                   id: info
                   anchors.left: root.editing ? grip.right : dot.right
                   anchors.leftMargin: root.editing ? 0 : Style.space(10)
-                  anchors.right: controls.visible ? controls.left : parent.right
+                  anchors.right: controls.visible ? controls.left : pauseButton.left
                   anchors.rightMargin: root.editing ? root.colGap : Style.space(10)
                   anchors.verticalCenter: parent.verticalCenter
 
@@ -905,8 +938,8 @@ BarWidget {
                     width: parent.width
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
-                    text: root.summary(row.result)
-                    color: root.statusColor(row.result)
+                    text: row.modelData.disabled ? "Paused" : root.summary(row.result)
+                    color: row.modelData.disabled ? Color.muted : root.statusColor(row.result)
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                   }
@@ -919,6 +952,17 @@ BarWidget {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.showDetail(row.modelData.url)
+                }
+
+                PanelActionButton {
+                  id: pauseButton
+                  visible: !root.editing
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  iconText: row.modelData.disabled ? "\uf04b" : "\uf04c"
+                  foreground: row.modelData.disabled ? root.warning : Color.muted
+                  tooltipText: row.modelData.disabled ? "Resume checks" : "Pause checks"
+                  onClicked: root.toggleTarget(row.modelData.url)
                 }
 
                 Row {

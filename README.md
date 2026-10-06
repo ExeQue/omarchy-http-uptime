@@ -14,6 +14,7 @@ An Omarchy bar widget that monitors your URLs: 2xx responses, valid SSL certific
 - **Panel** grouped by severity: down first, then slow, then healthy. It shows when the current outage or slow streak began.
 - **Detail view** per URL, with uptime and slow-response charts for 3h, 24h, 7d and 30d, and the last 10 checks with status, HTTP code and response time.
 - **Custom headers** per URL (up to 10), for example `Authorization`. Values are stored encrypted in the system keyring.
+- **Pause** a single URL, or all checks, without removing anything. History is kept.
 - **Settings in the panel.** Add, edit, reorder (drag and drop) and remove URLs, and set the check interval and slow limit per URL.
 
 ## Screenshots
@@ -51,6 +52,8 @@ Removing a single URL in settings deletes its history and header values right aw
 | Left-click the icon | Open the panel |
 | Right-click the icon | Check every URL now |
 | Click a URL in the panel | Open its detail view |
+| Pause icon on a URL | Pause or resume checks for that URL |
+| Pause icon in the panel header | Pause or resume all automatic checks |
 | Gear icon in the panel | Settings: add, edit, reorder and remove URLs |
 
 In settings, a row with unsaved changes shows ✓ (save) and ↺ (revert) in place of the trash icon. Enter in the URL field also saves the row. Unsaved changes are discarded when you leave settings.
@@ -89,6 +92,8 @@ Settings are stored in `~/.config/omarchy/http-uptime.json`, which the panel rea
 | `slowMs` | Default response time, in milliseconds, above which a URL counts as slow |
 | `targets[].interval`, `targets[].slowMs` | Per-URL overrides |
 | `targets[].headers` | Names of custom headers; the values are in the keyring |
+| `paused` | `true` pauses all automatic checks; "Check all now" still runs |
+| `targets[].disabled` | `true` pauses this URL: it is never checked and doesn't count towards the bar icon |
 
 ## Where data is stored
 
