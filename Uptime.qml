@@ -274,15 +274,17 @@ BarWidget {
   }
 
   // Title says what happened; the body is the detail. The shell only renders b/i/u/s/em/strong
-  // in the body (anything else, like <font>, shows as raw text), so the body is escaped plain text.
-  // Clicking the notification opens this URL's detail view (see IpcHandler).
+  // in the body (anything else, like <font>, shows as raw text), so the body is escaped plain text
+  // and notify.sh shows the state's colour as a dot image instead (red down, yellow degraded, blue
+  // not checked, green recovered). Clicking the notification opens this URL's detail view (see IpcHandler).
   function notify(r, recovered) {
     var level = severity(r.status)
     var host = r.url.replace(/^https?:\/\//, "").replace(/\/$/, "")
     var title = recovered ? "Recovered" : { slow: "Slow", expiring: "Certificate expiring", ssl: "SSL error", skipped: "Not checked" }[r.status] || "Down"
     var text = recovered ? "Responding normally (" + r.ms + " ms)" : r.detail
     var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    Quickshell.execDetached(["omarchy-notification-send", "--app-name", "HTTP Uptime",
+    Quickshell.execDetached(["bash", Qt.resolvedUrl("notify.sh").toString().replace(/^file:\/\//, ""),
+      String(recovered ? good : severityColor(level)), "--app-name", "HTTP Uptime",
       "-u", level === 3 && !recovered ? "critical" : "normal",
       title + ": " + host, escaped,
       "--exec", "omarchy-shell", moduleName, "showDetail", r.url])
