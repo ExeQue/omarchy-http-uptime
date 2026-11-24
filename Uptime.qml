@@ -273,9 +273,9 @@ BarWidget {
     return status === "ok" ? 0 : status === "skipped" ? 1 : status === "slow" || status === "expiring" ? 2 : 3
   }
 
-  // Title says what happened; the body starts with a dot in the state's colour (red down, yellow
-  // degraded, blue not checked, green recovered; the body renders StyledText). Clicking the notification opens this
-  // URL's detail view (see IpcHandler).
+  // Title says what happened; the body is the detail. The shell only renders b/i/u/s/em/strong
+  // in the body (anything else, like <font>, shows as raw text), so the body is escaped plain text.
+  // Clicking the notification opens this URL's detail view (see IpcHandler).
   function notify(r, recovered) {
     var level = severity(r.status)
     var host = r.url.replace(/^https?:\/\//, "").replace(/\/$/, "")
@@ -284,7 +284,7 @@ BarWidget {
     var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     Quickshell.execDetached(["omarchy-notification-send", "--app-name", "HTTP Uptime",
       "-u", level === 3 && !recovered ? "critical" : "normal",
-      title + ": " + host, "<font color=\"" + (recovered ? good : severityColor(level)) + "\">●</font> " + escaped,
+      title + ": " + host, escaped,
       "--exec", "omarchy-shell", moduleName, "showDetail", r.url])
   }
 
